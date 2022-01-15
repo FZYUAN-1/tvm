@@ -17,6 +17,7 @@
 import glob
 import os
 import re
+from statistics import mode
 
 import numpy as np
 import pytest
@@ -5676,7 +5677,53 @@ def test_qlinearsigmoid(target, dev):
     verify_qlinearsigmoid([5])
     verify_qlinearsigmoid([3, 4, 5])
     verify_qlinearsigmoid([])
+    
+@tvm.testing.known_failing_targets("cuda")
+@tvm.testing.parametrize_targets
+def test_qlinearmatmul(target, dev):
+    def verify_qlinearmatmul(a_shape, b_shape, is_a_scale_1D = False, is_b_scale_1D = False):
 
+        a = np.random.randint(low=0, high=255, size=a_shape).astype("uint8")
+        b = np.random.randint(low=0, high=255, size=b_shape).astype("uint8")
+
+        a_length = a_shape[0] if is_a_scale_1D else 1  # quantization per row 
+        b_length = b_shape[1] if is_b_scale_1D else 1  # quantization per column 
+        b_scale = np.random.randn(b_length).astype("float32") 
+        b_zero_point = np.random.randn(b_length).astype("uint8")
+        y_scale = np.random.randn(1).astype("float32")
+        y_zp = np.random.randn(1).astype("uint8")
+        input_nodes = [
+            helper.make_tensor_value_info("a", TensorProto.UINT8, a_shape),
+            helper.make_tensor_value_info("b", TensorProto.UINT8, b_shape),
+        ]
+        input_values = [a,b]
+        input_names = ["a", "a_scale", "a_zero_point", "b", "b_scale", "b_zero_point", "y_scale", "y_zero_point"]
+        # input_shapes = [a_shape, a_shape[0], ]
+        initializer = [
+            helper.make_tensor("a_scale", TensorProto.FLOAT, (), np.random.randn(1)),
+            helper.make_tensor("a_zero_point", TensorProto.UINT8, (), np.random.randint(0, 255, size=1)),
+            helper.make_tensor("b_scale", TensorProto.FLOAT, [b_length], np.random.randn(b_length)),
+            # helper.make_tensor("b_zero_point", TensorProto.UINT8, [b_length], np.random.randint(0, 255, size=b_length)),
+            helper.make_tensor("b_zero_point", TensorProto.UINT8, [], np.random.randint(0, 255, size=1)),
+            helper.make_tensor("y_scale", TensorProto.FLOAT, (), np.random.randn(1)),
+            helper.make_tensor("y_zero_point", TensorProto.UINT8, (), np.random.randint(0, 255, size=1)),
+        ]
+        node = helper.make_node("QLinearMatMul", inputs=input_names, outputs=["y"])
+        graph = helper.make_graph(
+            [node],
+            "test_qlinearmatmul",
+            inputs=input_nodes,
+            outputs=[helper.make_tensor_value_info("y", TensorProto.UINT8, [a_shape[-2], b_shape[-1]])],
+            initializer=initializer
+        )
+        model = helper.make_model(graph, producer_name="test_qlinearmatmul")
+        verify_with_ort_with_inputs(model, input_values, target=target, dev=dev, opt_level=2)
+        #quantize_and_verify_with_ort(model, input_names, [a_shape, a_length, a_length, b_shape, b_length, b_length, 1, 1], target=target, dev=dev)
+
+    #verify_qlinearmatmul([3, 2], [2, 20], is_a_scale_1D=False, is_b_scale_1D=False)
+    #verify_qlinearmatmul([3, 2], [2, 20], is_a_scale_1D=False, is_b_scale_1D=True)
+    #verify_qlinearmatmul([3, 2], [2, 20], is_a_scale_1D=True, is_b_scale_1D=False)
+    verify_qlinearmatmul([4, 2], [2, 20], is_a_scale_1D=True, is_b_scale_1D=True)
 
 @tvm.testing.parametrize_targets
 def test_random_uniform(target, dev):
@@ -6284,6 +6331,7 @@ if __name__ == "__main__":
     test_eyelike()
     test_qlinearconcat()
     test_qlinearconv()
+    test_qlinearmatmul()
     test_random_uniform()
     test_convinteger()
     test_batch_matmul()

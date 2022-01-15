@@ -3834,8 +3834,8 @@ class QLinearMatMul(OnnxOpConverter):
         a_scale_scalar = try_resolve_to_const_scalar(a_scale)
         a_zp_scalar = try_resolve_to_const_scalar(a_zp, "int32")
 
-        b_scale_scalar = try_resolve_to_const_scalar(b_scale)
-        b_zp_scalar = try_resolve_to_const_scalar(b_zp, "int32")
+        b_scale_scalar = try_resolve_var_to_const(b_scale, params)
+        b_zp_scalar = try_resolve_var_to_const(b_zp, params)
 
         y_scale_scalar = try_resolve_to_const_scalar(y_scale)
         y_zp_scalar = try_resolve_to_const_scalar(y_zp, "int32")
