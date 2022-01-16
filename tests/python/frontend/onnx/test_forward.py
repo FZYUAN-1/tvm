@@ -5722,43 +5722,6 @@ def test_qlinearsigmoid(target, dev):
     verify_qlinearsigmoid([])
     
 @tvm.testing.parametrize_targets
-def test_qlinearmatmul(target, dev):
-    def verify_qlinearmatmul(a_shape, b_shape, is_a_scale_1D = False, is_b_scale_1D = False):
-
-        a = np.random.randint(low=-20, high=20, size=a_shape).astype("uint8")
-        b = np.random.randint(low=-20, high=20, size=b_shape).astype("uint8")
-
-        a_length = a_shape[0] if is_a_scale_1D else 1  # quantization per row 
-        b_length = b_shape[1] if is_b_scale_1D else 1  # quantization per column 
-        input_nodes = [
-            helper.make_tensor_value_info("a", TensorProto.UINT8, a_shape),
-            helper.make_tensor_value_info("b", TensorProto.UINT8, b_shape),
-        ]
-        input_values = [a,b]
-        input_names = ["a", "a_scale", "a_zero_point", "b", "b_scale", "b_zero_point", "y_scale", "y_zero_point"]
-        initializer = [
-            helper.make_tensor("a_scale", TensorProto.FLOAT, (), np.random.randn(1)),
-            helper.make_tensor("a_zero_point", TensorProto.UINT8, (), [3]),
-            helper.make_tensor("b_scale", TensorProto.FLOAT, [b_length], np.random.randn(b_length)),
-            helper.make_tensor("b_zero_point", TensorProto.UINT8, [b_length], [2 for _ in range(b_length)]),
-            helper.make_tensor("y_scale", TensorProto.FLOAT, (), np.random.randn(1)),
-            helper.make_tensor("y_zero_point", TensorProto.UINT8, (), [2]),
-        ]
-        node = helper.make_node("QLinearMatMul", inputs=input_names, outputs=["y"])
-        graph = helper.make_graph(
-            [node],
-            "test_qlinearmatmul",
-            inputs=input_nodes,
-            outputs=[helper.make_tensor_value_info("y", TensorProto.UINT8, [a_shape[-2], b_shape[-1]])],
-            initializer=initializer
-        )
-        model = helper.make_model(graph, producer_name="test_qlinearmatmul")
-        verify_with_ort_with_inputs(model, input_values, target=target, dev=dev, opt_level=2)
-
-    verify_qlinearmatmul([3, 2], [2, 20], is_b_scale_1D=False)
-    verify_qlinearmatmul([4, 2], [2, 20], is_b_scale_1D=True)
-
-@tvm.testing.parametrize_targets
 def test_random_uniform(target, dev):
     def get_random_uniform(shape, dtype="float32", high=1.0, low=0.0, seed=None):
         ONNX_DTYPE = mapping.NP_TYPE_TO_TENSOR_TYPE[np.dtype(dtype)]
