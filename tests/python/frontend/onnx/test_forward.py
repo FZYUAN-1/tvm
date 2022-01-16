@@ -6364,7 +6364,6 @@ if __name__ == "__main__":
     test_eyelike()
     test_qlinearconcat()
     test_qlinearconv()
-    test_qlinearmatmul()
     test_random_uniform()
     test_convinteger()
     test_batch_matmul()
