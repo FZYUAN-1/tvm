@@ -366,14 +366,18 @@ PrimExpr CommonSubexpressionEliminator::VisitExpr_(const LetNode* op) {
  * \param stmt The statement to mutate.
  */
 Stmt CommonSubexpressionEliminator::VisitStmt(const Stmt& stmt) {
+  VLOG(1)<< "Input Stmt : \n" << stmt;
   bool variables_created = false;  // Will be needed for knowing if the CSE has created new vars
   Stmt result = stmt;
-
+  
   // Obtain the (syntactic) eligible computations done by the input statement, and keep it as
   // a ComputationTable, which is a mapping from PrimExpr to size_t, where the size_t is the
   // number of time this exact syntactic computation is being computed.
   ComputationTable table_syntactic_comp_done_by_stmt = ComputationsDoneBy::GetComputationsDoneBy(
       stmt, IsEligibleComputation, CanContainEligibleComputations);
+  
+  VLOG(1)<<"ComputationTable :";
+  PrintComputationTable(table_syntactic_comp_done_by_stmt);
 
   // Transform the hashtable of *syntactic* eligible computations into a vector of pairs
   // containing *semantic* entities, i.e. where equivalent computations are merged.
@@ -486,14 +490,16 @@ Stmt CommonSubexpressionEliminator::VisitStmt(const Stmt& stmt) {
   // If the CSE pass has created some variables, then we run it again as more commoning could
   // potentially happen using the new variables introduced
   if (variables_created) {
+    VLOG(1)<<"variables_created true";
     result = VisitStmt(result);
   } else {
     // But if no changes were performed, we recurse inside the children by calling the dispatcher.
     // Calling the dispatcher to the specific treatments, which will update the context
     // appropriately before doing the recursive calls on the children nodes
+    VLOG(1)<<"variables_created false";
     result = StmtExprMutator::VisitStmt(result);
   }
-
+  VLOG(1)<<"Output: result="<<result;
   return result;
 }
 

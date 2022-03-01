@@ -552,6 +552,7 @@ ComputationTable ComputationsDoneBy::ComputationsDoneByChildrenOf(
 ComputationTable ComputationsDoneBy::ComputationsDoneByChildrenOf(
     const Stmt& stmt, std::function<bool(const PrimExpr&)> is_eligible_computation,
     std::function<bool(const PrimExpr&)> can_contain_computations) {
+  VLOG(1)<<"Recursively calling child node:\n"<<stmt;
   // We will be using an instance of the class ComputationsDoneBy for the child nodes
   // (ie, they will share the "result" that `table_of_computations_` is)
   ComputationsDoneBy computations_done_by(is_eligible_computation, can_contain_computations);
