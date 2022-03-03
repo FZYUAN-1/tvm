@@ -444,7 +444,10 @@ PrimExpr RewriteSimplifier::Impl::VisitExpr_(const MulNode* op) {
     // canonicalization
     TVM_TRY_RECURSIVE_REWRITE(x * (c1 * y), (x * y) * c1);
     TVM_TRY_RECURSIVE_REWRITE(c1 * x, x * c1);
+    TVM_TRY_RECURSIVE_REWRITE((x + y) * z, z * (x + y));
+    TVM_TRY_RECURSIVE_REWRITE((x - y) * z, z * (x - y));
     TVM_TRY_RECURSIVE_REWRITE_IF((x - y) * c1, (y - x) * (0 - c1), c1.Eval()->value < 0);
+
   }
   return ret;
 }

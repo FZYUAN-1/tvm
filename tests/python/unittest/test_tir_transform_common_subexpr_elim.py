@@ -16,6 +16,7 @@
 # under the License.
 import tvm
 from tvm import te
+from tvm.script.tir import prim_func
 
 # A test program which gives the opportunity for the CSE pass to introduce two new variables, at two different levels
 def test_cse():
@@ -310,8 +311,69 @@ def test_cse_cascade():
     assert tvm.ir.structural_equal(store3.value, cse_var_2)
 
 
+def test_semantic_equiv_distributivity():
+    i1 = te.var("i1")
+    i2 = te.var("i2")
+    x = te.var("x")
+    y = te.var("y")
+    z = te.var("z")
+    dtype = "int32"
+    buffer = tvm.tir.decl_buffer((50,), dtype)
+    body = tvm.tir.SeqStmt(
+        [
+            tvm.tir.Store(buffer.data, x*(y+z), i1),
+            tvm.tir.Store(buffer.data, x*y+x*z, i2),
+        ]
+    )
+
+    mod = tvm.IRModule.from_expr(tvm.tir.PrimFunc([i1, i2, x, y, z], body))
+    body = tvm.tir.transform.CommonSubexprElimTIR()(mod)
+
+    tvm.transform.PrintIR()(body)
+
+def test_semantic_equiv_associativity():
+    i1 = te.var("i1")
+    i2 = te.var("i2")
+    x = te.var("x")
+    y = te.var("y")
+    z = te.var("z")
+    dtype = "int32"
+    buffer = tvm.tir.decl_buffer((50,), dtype)
+    body = tvm.tir.SeqStmt(
+        [
+            tvm.tir.Store(buffer.data, x+(y+z), i1),
+            tvm.tir.Store(buffer.data, (x+y)+z, i2),
+        ]
+    )
+
+    mod = tvm.IRModule.from_expr(tvm.tir.PrimFunc([i1, i2, x, y, z], body))
+    body = tvm.tir.transform.CommonSubexprElimTIR()(mod)
+
+    tvm.transform.PrintIR()(body)
+
+def test_semantic_equiv_commutativity():
+    i1 = te.var("i1")
+    i2 = te.var("i2")
+    x = te.var("x")
+    y = te.var("y")
+    z = te.var("z")
+    dtype = "int32"
+    buffer = tvm.tir.decl_buffer((50,), dtype)
+    body = tvm.tir.SeqStmt(
+        [
+            tvm.tir.Store(buffer.data, x+(y+z), i1),
+            tvm.tir.Store(buffer.data, (x+y)+z, i2),
+        ]
+    )
+
+    mod = tvm.IRModule.from_expr(tvm.tir.PrimFunc([i1, i2, x, y, z], body))
+    body = tvm.tir.transform.CommonSubexprElimTIR()(mod)
+
+    tvm.transform.PrintIR()(body)
+
 if __name__ == "__main__":
     test_cse()
     test_cse_ifNode_1()
     test_cse_ifNode_2()
     test_cse_cascade()
+    test_semantic_equiv()
