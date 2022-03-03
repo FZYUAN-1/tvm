@@ -16,7 +16,7 @@
 # under the License.
 import tvm
 from tvm import te
-from tvm.script.tir import prim_func
+from tvm.script import tir as T
 
 # A test program which gives the opportunity for the CSE pass to introduce two new variables, at two different levels
 def test_cse():
@@ -327,7 +327,7 @@ def test_semantic_equiv_distributivity():
     )
 
     mod = tvm.IRModule.from_expr(tvm.tir.PrimFunc([i1, i2, x, y, z], body))
-    body = tvm.tir.transform.CommonSubexprElimTIR()(mod)
+    body = tvm.tir.transform.Simplify()(mod)
 
     tvm.transform.PrintIR()(body)
 
@@ -351,6 +351,44 @@ def test_semantic_equiv_associativity():
 
     tvm.transform.PrintIR()(body)
 
+
+@T.prim_func
+def semantic_equiv_associativity_func(a: T.handle, b: T.handle, c: T.handle) -> None:
+    A = T.match_buffer(a, [128])
+    B = T.match_buffer(b, [128])
+    C = T.match_buffer(c, [128])
+    D = T.alloc_buffer([128])
+
+    for i, j, k, l in T.grid(128, 128, 128, 128):
+        with T.block("update"):
+            vi, vj, vk, vl = T.axis.remap("SSSS", [i, j, k, l])
+            with T.init():
+                D[vl] = T.float32(0)
+            D[vl] = D[vl] + (A[vi*128] * (B[vj] + C[vk]))
+            D[vl] = D[vl] + (A[vi*128] * B[vj] + A[vi] * C[vk])
+
+
+def test_semantic_equiv_associativity_func():
+    n = te.size_var("n")
+    A = te.placeholder((n,), name="A")
+    B = te.placeholder((n,), name="B")
+
+    T = te.compute((n,), lambda i: A[i] + B[i])
+    s = te.create_schedule(T.op)
+    xo, xi = s[T].split(T.op.axis[0], factor=4)
+
+    bounds = tvm.te.schedule.InferBound(s)
+    stmt = tvm.te.schedule.ScheduleOps(s, bounds)
+
+    mod = tvm.IRModule.from_expr(tvm.tir.PrimFunc([n], stmt))
+    # mod = tvm.IRModule.from_expr(func)
+    mod = tvm.tir.transform.LoopPartition()(mod)
+    mod = tvm.tir.transform.CommonSubexprElimTIR()(mod)
+    # mod = tvm.tir.transform.Simplify()(mod)
+    tvm.transform.PrintIR()(mod)
+
+
+
 def test_semantic_equiv_commutativity():
     i1 = te.var("i1")
     i2 = te.var("i2")
@@ -370,6 +408,8 @@ def test_semantic_equiv_commutativity():
     body = tvm.tir.transform.CommonSubexprElimTIR()(mod)
 
     tvm.transform.PrintIR()(body)
+
+
 
 if __name__ == "__main__":
     test_cse()

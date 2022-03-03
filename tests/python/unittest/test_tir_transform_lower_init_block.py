@@ -99,6 +99,9 @@ def test_lower_reduction():
 def test_lower_match_buffer():
     origin_mod = InitWithMatchBuffer
     mod = tvm.tir.transform.LowerInitBlock()(origin_mod)
+    
+    tvm.transform.PrintIR()(origin_mod)
+    tvm.transform.PrintIR()(mod)
     tvm.ir.assert_structural_equal(mod, BranchWithMatchBuffer, True)
 
 
