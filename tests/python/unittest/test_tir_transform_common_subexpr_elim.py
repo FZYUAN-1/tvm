@@ -18,6 +18,58 @@ import tvm
 from tvm import te
 from tvm.script import tir as T
 
+@T.prim_func
+def func_distributivity(
+    i1: T.int32, i2: T.int32, i3: T.int32, i4: T.int32, x: T.int32, y: T.int32, z: T.int32
+) -> None:
+    B = T.buffer_decl((50,), "int32")
+    B[i1] = x * (y + z)
+    B[i2] = x * y + x * z
+    B[i3] = (y + z) * x
+    B[i4] = y * x + x * z
+
+
+@T.prim_func
+def func_distributivity_expected(
+    i1: T.int32, i2: T.int32, i3: T.int32, i4: T.int32, x: T.int32, y: T.int32, z: T.int32
+) -> None:
+    B = T.buffer_decl((50,), "int32")
+    cse_var_1 = T.var("int32")
+    with T.let(cse_var_1, x * y + x * z):
+        B[i1] = cse_var_1
+        B[i2] = cse_var_1
+        B[i3] = cse_var_1
+        B[i4] = cse_var_1
+
+@T.prim_func
+def func_associativity(
+    i1: T.int32, i2: T.int32, i3: T.int32, x: T.int32, y: T.int32, z: T.int32
+) -> None:
+    B = T.buffer_decl((50,), "int32")
+    B[i1] = (x+y) + z
+    B[i2] = (y + z) + x
+    B[i3] = (x+z)+y
+
+@T.prim_func
+def func_associativity_expected(
+    i1: T.int32, i2: T.int32, i3: T.int32, x: T.int32, y: T.int32, z: T.int32
+) -> None:
+    B = T.buffer_decl((50,), "int32")
+    cse_var_1 = T.var("int32")
+    with T.let(cse_var_1, x+(y+z)):
+        B[i1] = cse_var_1
+        B[i2] = cse_var_1
+        B[i3] = cse_var_1
+
+def _check(original, transformed):
+    func = original
+    mod = tvm.IRModule.from_expr(func)
+    print(mod)
+    mod = tvm.tir.transform.CommonSubexprElimTIR()(mod)
+    print(mod)
+    tvm.ir.assert_structural_equal(mod["main"], transformed)
+
+
 # A test program which gives the opportunity for the CSE pass to introduce two new variables, at two different levels
 def test_cse():
     z1 = te.var("z1")
@@ -248,6 +300,28 @@ def test_cse_ifNode_2():
 # Test commoning in cascade : after having introduced a big exp ((x+y)+z) into a new variable,
 # it will become possible to do another commoning for (x+y) which appears both in the new variable
 # and in the rest of the program.
+
+
+@T.prim_func
+def func_cse_cascade(
+    i1: T.int32, i2: T.int32, i3: T.int32, x: T.int32, y: T.int32, z: T.int32
+) -> None:
+    B = T.buffer_decl((50,), "int32")
+    B[i1] = (x + y) + z
+    B[i2] = (x + y) + z
+    B[i3] = x + y
+
+
+@T.prim_func
+def func_cse_cascade_expected(
+    i1: T.int32, i2: T.int32, i3: T.int32, x: T.int32, y: T.int32, z: T.int32
+) -> None:
+    B = T.buffer_decl((50,), "int32")
+    B[i1] = (x + y) + z
+    B[i2] = (x + y) + z
+    B[i3] = x + y
+
+
 def test_cse_cascade():
     i1 = te.var("i1")
     i2 = te.var("i2")
@@ -311,104 +385,15 @@ def test_cse_cascade():
     assert tvm.ir.structural_equal(store3.value, cse_var_2)
 
 
+
+
+
 def test_semantic_equiv_distributivity():
-    i1 = te.var("i1")
-    i2 = te.var("i2")
-    x = te.var("x")
-    y = te.var("y")
-    z = te.var("z")
-    dtype = "int32"
-    buffer = tvm.tir.decl_buffer((50,), dtype)
-    body = tvm.tir.SeqStmt(
-        [
-            tvm.tir.Store(buffer.data, x*(y+z), i1),
-            tvm.tir.Store(buffer.data, x*y+x*z, i2),
-        ]
-    )
+    _check(func_distributivity, func_distributivity_expected)
 
-    mod = tvm.IRModule.from_expr(tvm.tir.PrimFunc([i1, i2, x, y, z], body))
-    body = tvm.tir.transform.Simplify()(mod)
-
-    tvm.transform.PrintIR()(body)
 
 def test_semantic_equiv_associativity():
-    i1 = te.var("i1")
-    i2 = te.var("i2")
-    x = te.var("x")
-    y = te.var("y")
-    z = te.var("z")
-    dtype = "int32"
-    buffer = tvm.tir.decl_buffer((50,), dtype)
-    body = tvm.tir.SeqStmt(
-        [
-            tvm.tir.Store(buffer.data, x+(y+z), i1),
-            tvm.tir.Store(buffer.data, (x+y)+z, i2),
-        ]
-    )
-
-    mod = tvm.IRModule.from_expr(tvm.tir.PrimFunc([i1, i2, x, y, z], body))
-    body = tvm.tir.transform.CommonSubexprElimTIR()(mod)
-
-    tvm.transform.PrintIR()(body)
-
-
-@T.prim_func
-def semantic_equiv_associativity_func(a: T.handle, b: T.handle, c: T.handle) -> None:
-    A = T.match_buffer(a, [128])
-    B = T.match_buffer(b, [128])
-    C = T.match_buffer(c, [128])
-    D = T.alloc_buffer([128])
-
-    for i, j, k, l in T.grid(128, 128, 128, 128):
-        with T.block("update"):
-            vi, vj, vk, vl = T.axis.remap("SSSS", [i, j, k, l])
-            with T.init():
-                D[vl] = T.float32(0)
-            D[vl] = D[vl] + (A[vi*128] * (B[vj] + C[vk]))
-            D[vl] = D[vl] + (A[vi*128] * B[vj] + A[vi] * C[vk])
-
-
-def test_semantic_equiv_associativity_func():
-    n = te.size_var("n")
-    A = te.placeholder((n,), name="A")
-    B = te.placeholder((n,), name="B")
-
-    T = te.compute((n,), lambda i: A[i] + B[i])
-    s = te.create_schedule(T.op)
-    xo, xi = s[T].split(T.op.axis[0], factor=4)
-
-    bounds = tvm.te.schedule.InferBound(s)
-    stmt = tvm.te.schedule.ScheduleOps(s, bounds)
-
-    mod = tvm.IRModule.from_expr(tvm.tir.PrimFunc([n], stmt))
-    # mod = tvm.IRModule.from_expr(func)
-    mod = tvm.tir.transform.LoopPartition()(mod)
-    mod = tvm.tir.transform.CommonSubexprElimTIR()(mod)
-    # mod = tvm.tir.transform.Simplify()(mod)
-    tvm.transform.PrintIR()(mod)
-
-
-
-def test_semantic_equiv_commutativity():
-    i1 = te.var("i1")
-    i2 = te.var("i2")
-    x = te.var("x")
-    y = te.var("y")
-    z = te.var("z")
-    dtype = "int32"
-    buffer = tvm.tir.decl_buffer((50,), dtype)
-    body = tvm.tir.SeqStmt(
-        [
-            tvm.tir.Store(buffer.data, x+(y+z), i1),
-            tvm.tir.Store(buffer.data, (x+y)+z, i2),
-        ]
-    )
-
-    mod = tvm.IRModule.from_expr(tvm.tir.PrimFunc([i1, i2, x, y, z], body))
-    body = tvm.tir.transform.CommonSubexprElimTIR()(mod)
-
-    tvm.transform.PrintIR()(body)
-
+    _check(func_associativity, func_associativity_expected)
 
 
 if __name__ == "__main__":
